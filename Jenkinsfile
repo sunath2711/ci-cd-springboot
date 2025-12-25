@@ -16,10 +16,17 @@ pipeline {
                 }
             }
         }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t cicd-springboot:${BUILD_NUMBER} app'
+            }
+        }
+
         stage('Archive Artifact') {
             steps {
                 archiveArtifacts artifacts: 'app/target/*.jar', fingerprint: true
             }
-        }    
+        }
     }
 }
