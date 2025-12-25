@@ -9,12 +9,17 @@ pipeline {
             }
         }
 
-        stage('Build & Test') {
+        stage('Build & Package') {
             steps {
                 dir('app') {
-                    sh 'mvn clean test'
+                    sh 'mvn clean package'
                 }
             }
         }
+        stage('Archive Artifact') {
+            steps {
+                archiveArtifacts artifacts: 'app/target/*.jar', fingerprint: true
+            }
+        }    
     }
 }
