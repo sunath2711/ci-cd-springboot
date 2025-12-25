@@ -5,6 +5,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: 'feature/initial-app',
+                    credentialsId: 'git_pat',
                     url: 'https://github.com/sunath2711/ci-cd-springboot'
             }
         }
