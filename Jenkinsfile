@@ -19,14 +19,8 @@ pipeline {
         }
 
         stage('Docker Build') {
-            agent {
-                docker {
-                    image 'docker:27-cli'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'
-                }
-            }
             steps {
-                sh 'docker build -t cicd-springboot:${BUILD_NUMBER} .'
+                sh 'docker build -t cicd-springboot:${BUILD_NUMBER} app'
             }
         }
 
