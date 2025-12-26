@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "sunath2711/cicd-springboot"
+        IMAGE_NAME = "sunath27/cicd-springboot"
     }
 
     stages {
