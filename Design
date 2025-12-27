@@ -1,0 +1,685 @@
+# CICD spring boot project to understand how CI and CD work from code push to Deploying application
+
+
+Stage 1
+
+1) We set up github repo
+2) Made sure i had docker desktop since would be runnnig containers on there
+3) Also setup JDK , java 11 already was installed for me
+4) The application was build with Springboot and Packaged with Maven
+
+mkdir devops-ci-cd-springboot
+cd devops-ci-cd-springboot
+git init
+
+git remote add origin <your-github-repo-url>
+
+5) Then we created pom.xml - project object model this is a single source of truth file that tells mvane how to build the application, what dependancies to download, how to package, what plugins are required - kind of heartbeat for building package with Maven  --  The contract between your code and your DevOps pipeline
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+This POM should be sonarqube + jenkins friendly 
+
+6) Then we created the Main application Class
+DemoApplication.java inside demo folder
+ 
+   public class DemoApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);
+    }
+}
+
+7) Then created Rest Controller with endpoints /hello and /health 
+
+    @RestController
+public class HelloController {
+
+    @GetMapping("/health")
+    public String health() {
+        return "OK";
+    }
+
+    @GetMapping("/hello")
+    public String hello(@RequestParam(defaultValue = "World") String name) {
+        return "Hello " + name;
+    }
+}
+
+8) Then unit tests were added - to run post each commit and finding failures in code at early stage itself , kept primitive for our use case , mostly regression kind of thing to find the code is okay and no case fails due to new code at an early stage itself
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class HelloControllerTest {
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Test
+    void healthEndpointWorks() {
+        String response = restTemplate.getForObject("/health", String.class);
+        assertThat(response).isEqualTo("OK");
+    }
+
+    @Test
+    void helloEndpointWorks() {
+        String response = restTemplate.getForObject("/hello?name=Sunath", String.class);
+        assertThat(response).isEqualTo("Hello Sunath");
+    }
+}
+
+
+9) Then we test locally by running "mvn clean test" to make sure the code is working is expected and tests are passing - also check the endpoints are reachable -- mvn spring-boot:run
+
+10) Make sure these changes are done on any branch ( no issue with master too), and then git push to github repo 
+
+
+Phase 1 completes all code setup for java springboot application, setup for maven tests and build, github repo with code changes
+
+==================================================================================================================================
+
+Phase 2 
+
+GitHub (feature branch)
+   |
+   | push / PR
+   v
+Jenkins (Docker)
+   |
+   | mvn clean test
+   v
+Build Result (PASS / FAIL)
+
+Objective is t run the jenkins server on docker container, build a pipeline that fetches code from github and execute the pipeline  to run maven and build the application into jar
+
+1) Firstly on the host machine windows, create a directory that will persist all jobs,cred, pipelines for jenkins at ~/jenkins_home
+       mkdir -p ~/jenkins_home
+
+2) docker run -d --name jenkins -p 8081:8080 -p 50000:50000 -v ~/jenkins_home:/var/jenkins_home jenkins/jenkins:lts
+   this will help to run a docker container named jenkins with the image jenkins
+   http://localhost:8081 - accesible here
+
+3) On the webpage , we need to setup jenkins for the first time 
+   docker exec jenkins cat /var/jenkins_home/sec rets/initialAdminPassword  - execute in gitbash
+    This gives the pwd for the first time setup 
+
+4) Installed require plugins and setup jenkins with git, github, maven, pipeline and plugins required to execute the tasks
+
+
+5) Now time to crea the pipeline, got to new item - pipeline  with name cicd-springboot
+
+6) now on the code part parallel to app/ directory , create a very imprtant file that feeds the pipeline on what needs to be run in stages called the Jenkinsfile
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'feature/initial-app',
+                    url: 'https://github.com/<your-username>/devops-ci-cd-springboot.git'
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                dir('app') {
+                    sh 'mvn clean test'
+                }
+            }
+        }
+    }
+}
+
+Only trying the maven clean test here, to check whether the jenkins container is able to execute the maven build through it
+Push these code changes to git
+
+7) Configure Jenkins Job
+
+            In Jenkins job:
+            Pipeline definition → Pipeline script from SCM
+            SCM → Git
+            Repo URL → your GitHub repo
+            Branch → feature/initial-app
+            Script path → Jenkinsfile
+
+8) Why are we running Jenkins on Docker?
+Short answer
+
+👉 Consistency, isolation, and zero-pain setup
+
+Long answer (real-world reasoning)
+❌ Traditional Jenkins install (problematic)
+
+Install Jenkins on OS, Install Java, Manage Jenkins upgrades , Manage plugin compatibility, Risk breaking CI when OS changes
+Jenkins Container
+│
+├── Clones your GitHub repo
+│
+├── Executes Jenkinsfile
+│
+├── Runs:
+│   mvn clean test
+│
+└── Reports PASS / FAIL
+
+9) Jenkinsfile here basically is Pipeline as a Code
+   Sometimes running the docker build command or docker run  commmand with gitbash and windows may add some extra lines or characters due to line continuations
+       Shell	Line continuation
+        Git Bash	    \
+        Linux / Mac 	\
+    PowerShell / CMD	 ^
+
+On Windows:
+
+Tool	Behavior
+Git Bash	Rewrites Linux paths
+Docker	Expects Linux paths
+Jenkins container	Linux filesystem
+
+That’s why:
+
+//var/... works when moutning jenkins_home path volume
+
+10) If Jenkinsfile is not at same level of app or inside it, it may give not found error what jenkins actaully does is create a workspace 
+Explanation:
+Jenkins first clones repo only to read Jenkinsfile
+Then it runs the pipeline and does a second checkout
+This is normal behavior
+
+No at this point we hit another citical error where everything and build was started but due to no "mvn" present on docker container, the mvn clean test didnt work
+
+when restarting and deleteing container jenkins , make sure when bring it up again w mount the same volume at jenkins_home that has stored all the data - can be seen at docker desktop inside volumes - that is persistent 
+
+docker run -d   --name jenkins   -p 8081:8080   -p 50000:50000   -v 3df91a4c956902f68f78412c006b1fae2b3feb33ef4c69ee5058ebc5c0449258:/var/jenkins_home   -v //var/run/docker.sock:/var/run/docker.sock   jenk-docker-maven
+
+the big hash is the volume in our case 
+
+
+11) We had initally added maven to run as a docker from jenkins container itself like below to solve the problem where maven not installed and build test 
+    agent {
+    docker {
+        image 'maven:3.9.9-eclipse-temurin-11'
+        args '-v /root/.m2:/root/.m2'
+    }
+} 
+
+But this apporach has limitations and dependacies 
+            Jenkins container does NOT have access to Docker daemon
+            No /var/run/docker.sock
+            So Jenkins cannot start maven: container
+
+12) Then we manuallt installed maven on container itslef, to just check the pipeline working - ideal way should be to include in container image along with jenkins which is dont later - for now only installed on container directly 
+
+Phase 2 achieved 
+Jenkins running in Docker
+✅ Persistent Jenkins setup
+✅ GitHub SCM checkout working
+✅ Jenkinsfile correctly detected
+✅ Maven installed & wired
+✅ mvn clean test executed
+✅ CI pipeline GREEN
+
+=========================================================================================================================================================================
+
+PHASE 3 
+
+GitHub
+  ↓
+Jenkins
+  ├── mvn clean package
+  │     └── target/app.jar
+  │
+  ├── docker build
+  │     └── springboot-app:1.0
+  │
+  └── docker image ready
+
+1) Now code is changed in stage build and test - mvn clean package - now additionaly we prepare a JAR at the end with all the packaged content 
+This JAR contains:
+
+    Your compiled code
+    Embedded Tomcat
+    All dependencies
+    👉 This is a self-contained application
+
+
+2) Now createa a dockerfile that has a abase OS  - java runtime andcpoy our maven created JAR into it,
+  The purpose of this is using this dockerfile we are about to create an image tht can be deployed on any k8s cluster 
+    Application - packaged inside JAR - JAR + jave runtime + dependancy bundle into image -> image deployed to any k8s cluster 
+
+            FROM openjdk:17-jdk-slim
+            WORKDIR /app
+            COPY target/*.jar app.jar
+            EXPOSE 8080
+            ENTRYPOINT ["java","-jar","app.jar"]
+
+
+3) also we adda new stage in our pipeline to build docker image 
+       stage('Build Docker Image') {
+    steps {
+        sh 'docker build -t springboot-ci:1.0 .'
+    }
+}
+
+Maven JAr is still being built on the jenkins container itself
+
+
+4) We add another stage that wil give us the artiffact or JAR file post mvn package is done 
+
+stage('Archive Artifact') {
+            steps {
+                archiveArtifacts artifacts: 'app/target/*.jar', fingerprint: true
+            }
+        }
+
+
+5) Now we further modify the Dockerfile to  include a maven builder image inside itself
+                # ---------- Stage 1: Build ----------
+                FROM maven:3.9.9-eclipse-temurin-21 AS builder
+                WORKDIR /build
+                COPY pom.xml .
+                COPY src ./src
+                RUN mvn clean package -DskipTests
+
+                # ---------- Stage 2: Runtime ----------
+                FROM eclipse-temurin:21-jre
+                WORKDIR /app
+                COPY --from=builder /build/target/*.jar app.jar
+
+                EXPOSE 8080
+                ENTRYPOINT ["java", "-jar", "app.jar"]
+Stage 1 (Builder)
+
+Uses Maven image
+Compiles code
+Produces JAR
+Throws away build tools later
+Maven exists only during build
+
+Final image does NOT contain Maven
+Stage 2 (Runtime)
+
+Only Java runtime
+Very small image
+Faster startup
+More secure
+            This was done intentionlly to transition from building on jenkins to now buildong on docker itself 
+
+             GitHub
+ → Jenkins
+   → docker build
+     → Maven runs INSIDE Docker build
+     → Image contains final JAR
+
+
+Acc to this mvane is no longer required on our jenkins container  
+
+
+6)  VERY IMPORTANT POINT 
+
+   Docker listens on /var/run/docker.sock - socket , Docker runs as a daemon - now my host has this file(windows)
+   But since jenkins is a container that has docker isntalled but does not have docker.sock to listen to 
+   this socket is a like remote control that gives access to build image, docker run, so we want our container to have the same access and permissions
+   therefore we -v /var/run/docker.sock:/var/run/docker.sock mounted from host to container as volume 
+   Jenkins container → talks to Host Docker daemon → builds images
+
+
+7) since out container was up already, we faced some issues wtih brignging up with required volumes and docker.sock but eventually this worked
+
+     docker run -d \
+  --name jenkins \
+  -p 8081:8080 \
+  -p 50000:50000 \
+  -v 3df91a4c956902f68f78412c006b1fae2b3feb33ef4c69ee5058ebc5c0449258:/var/jenkins_home \
+  -v //var/run/docker.sock:/var/run/docker.sock \
+  jenkins/jenkins:lts
+
+// - avoid translation of path 
+
+8) We hit another error here when trying to check docker ps on the container itself 
+Requirement	Needed?
+Docker daemon	❌ (host provides it)
+docker.sock mounted	✅
+Docker CLI installed	✅ 
+
+9) then we created a new image that had jenkins mvane and docker.io installed to remove this error
+           USER root
+
+# ---- Install base dependencies ----
+RUN apt-get update && apt-get install -y \
+    docker.io \
+
+This Dockerfile is NOT the Jenkins image → that’s separate (Dockerfile.jenkins)
+
+This Dockerfile is the app image → your Spring Boot app in Docker
+
+Multi-stage build makes image small and clean
+
+Later, Kubernetes will use this image to deploy your app
+
+10)  Since we had restarted the container ,maven got uninstalled - so add too to our image that already has 
+     jenkins docker and now maven 
+     and build it and then deploy the container jenkins again 
+
+
+11) While runnig the docker build, we hit another error for permission denied since /var/run/docker.sock was root:root any non-root was not able to run the docker daemon
+    since we had jenkins user , we added it to group docker and also changed this file ownership to root:docker to alow jenkins to make use of it 
+        We also had root running the container but that time pipeline for some reason was not executing at the start itself and failing before clone itself
+
+        This stage we ran into huge upsets with docker.sock and permission denied somehow unable to build image on the jenkins container despite eveythingin place
+
+
+12) we used this dockerfile altering the chown for docker.sock 
+    FROM jenkins/jenkins:lts
+
+USER root
+
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    maven \
+    && apt-get clean
+
+# Add jenkins user to docker group
+RUN groupadd -f docker && usermod -aG docker jenkins
+
+USER jenkins
+
+Adding group docker and adding jenkins to docker group
+
+
+13) srw-rw---- 1 root docker 0 Dec 25 12:51 /var/run/docker.sock
+    After this the pipeline was modeified too for build step 
+        pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'feature/initial-app',
+                    url: 'https://github.com/sunath2711/ci-cd-springboot'
+            }
+        }
+
+        stage('Build & Package') {
+            steps {
+                dir('app') {
+                    sh 'mvn clean package'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t cicd-springboot:${BUILD_NUMBER} app'
+            }
+        }
+    }
+}
+
+
+
+
+14) and at last we reached here 
+
+    #14 unpacking to docker.io/library/cicd-springboot:12 0.3s done #14 DONE 1.6s [Pipeline] } [Pipeline] // stage [Pipeline] stage [Pipeline] { (Archive Artifact) [Pipeline] archiveArtifacts Archiving artifacts Recording fingerprints [Pipeline] } [Pipeline] // stage [Pipeline] } [Pipeline] // withEnv [Pipeline] } [Pipeline] // node [Pipeline] End of Pipeline Finished: SUCCESS
+
+
+Phew!!! Sigh of relief to finally find the pipeline running
+
+
+
+Jenkins container didn’t have Maven → fixed properly
+Didn’t hack pipelines; fixed infrastructure
+2️⃣ Docker permission model
+Didn’t run Jenkins as root ❌
+Didn’t chmod 777 blindly ❌
+
+Correct solution:
+docker.sock mounted
+Jenkins user added to docker group
+
+=========================================================================================================================================================================
+
+
+Phase 3.3 
+
+After this phase, your pipeline will:
+
+1) Build the application
+2) Build a Docker image
+3) Push the image to a container registry
+4) Make the image usable for deployment (Phase 4 – K8s)
+
+1) Now our task is to push the image created in lsat step to push to docker hub or any registry 
+   Have account on docker hub - create a arepo - make a PAT - privata access token for it and add that to credentials in the jenkins credentials with read and write permission on repos 
+
+2) we will tag images that we push in below manner 
+   sunath27/cicd-springboot:${BUILD_NUMBER}
+sunath27/cicd-springboot:latest
+
+
+3) Updae the jenkins file with a 
+   a) env variable 
+        
+    environment {
+        IMAGE_NAME = "sunath2711/cicd-springboot"
+    }
+
+
+  b) new stage to push image to docker hub registry post its build
+     steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                      echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                      docker push $IMAGE_NAME:${BUILD_NUMBER}
+                      docker push $IMAGE_NAME:latest
+                    '''
+                }
+            }
+        
+
+4) What each new part does (no hand-waving)
+withCredentials
+
+Securely injects secrets
+Not logged
+Not stored in Git
+Jenkins best practice
+
+docker login --password-stdin
+Secure login (no password leak)
+Required for CI systems
+
+Two pushes
+One immutable (BUILD_NUMBER)
+One mutable (latest)
+
+here the credentialsId should match the ID given on jenkins for the particular credential
+
+5) practically, push access was denied at the first time when pipeline ran - it was due to mismatch on docker image vuild and push 
+
+      environment {
+        IMAGE_NAME = "sunath27/cicd-springboot"
+    }
+
+
+6) when ran pipeline 
+
+93616117f2ee: Layer already exists 911f2e67b724: Layer already exists latest: digest: sha256:86cb5f1d3c340a6365a5e1706fedc4aaee5a2f310c3d7eeb253973db60894e9b size: 856 [Pipeline] } [Pipeline] // withCredentials [Pipeline] } [Pipeline] // stage [Pipeline] } [Pipeline] // withEnv [Pipeline] } [Pipeline] // withEnv [Pipeline] } [Pipeline] // node [Pipeline] End of Pipeline Finished: SUCCESS
+
+
+Completed phase 3.3 with image now getting pushde to docker hub  registry too
+
+GitHub
+  ↓
+Jenkins
+  ↓
+Maven build
+  ↓
+Docker image
+  ↓
+Docker Hub (registry)
+=========================================================================================================================================================================
+
+PHASE 4 - deploy the image to kubernetes cluster [ very improtant of CD ]
+
+By the end of Phase 4, you will have:
+
+A running Kubernetes cluster (local)
+Your Docker Hub image deployed on K8s
+A Service exposing the app
+A deployment that can be updated just by pushing new code
+
+
+1) Frist to have kubernetes or k8s cluster , enable kuberntes on docker desktop that will giving us a running k8s cluster with anem desktop-control-plane node for our
+   deployment to work on . NOTE: this is local on host right now
+   Choose kind : kubernetes in docker rather than kubeadm 
+
+Option	Description	Pros	Cons	Recommendation
+kubeadm	Full Kubernetes cluster, like production	Realistic, production-grade	Complex setup, takes time, tricky on Windows	❌ Not ideal for local dev/CI
+KIND	Kubernetes in Docker	Fast, easy, works on Windows, disposable, CI/CD friendly	Single-node (by default), not prod	✅ Perfect for Phase 4 / your CI/CD pipeline
+
+2) check kind version on powershell/ bash 
+   NAME STATUS ROLES AGE VERSION 
+   desktop-control-plane Ready control-plane 2m17s v1.31.1
+ 
+   Now we require to have kubectl on our jenkins container since we will be running kubectl apply andother manifestapply from our jenkins container to deploy the application with our image created in last step 
+
+   also we cannot directly install kubectl on the container with jenkins user, would require rooot permission 
+
+Why Jenkins needs kubectl inside its container
+
+Jenkins is the CI/CD orchestrator.It builds your code → builds Docker image → pushes it to Docker Hub.Next, it needs to tell Kubernetes “deploy this new image”.
+
+Kubernetes API can be accessed in two ways:
+
+Directly via kubectl CLI
+Or via a plugin (like Jenkins Kubernetes Plugin) that talks to the API
+
+If we use kubectl inside Jenkins, then in a pipeline we can run stages like:
+sh 'kubectl apply -f k8s/deployment.yaml'
+sh 'kubectl rollout status deployment cicd-springboot'
+
+
+This executes commands from Jenkins container, which instructs Kubernetes (KIND cluster) to deploy your Docker image.
+Without kubectl, Jenkins cannot directly interact with the cluster.
+
+3) we then decide to extend our docker image to include kubectl from beginnning itself making a solid image with everhting we require 
+
+
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    maven \
+    curl \
+    ca-certificates \
+    apt-transport-https \
+    && apt-get clean
+
+# ---- Install kubectl ----
+RUN curl -fsSL https://dl.k8s.io/release/stable.txt | \
+    xargs -I {} curl -fsSL -o /usr/local/bin/kubectl \
+    https://dl.k8s.io/release/{}/bin/linux/amd64/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
+Kind of locked in our docker file for building base image of jenkins container
+
+
+4) To bring up the final container for jenkins with image jen-mav-dock-kube 
+
+  $ MSYS_NO_PATHCONV=1 docker run -d   --name jenkins   -p 8081:8080   -p 50000:50000  --add-host=localhost:host-gateway -v 3df91a4c956902f68f78412c006b1fae2b3feb33ef4c69ee5058ebc5c0449258:/var/jenkins_home   -v //var/run/docker.sock:/var/run/docker.sock -v /c/Users/skhad/.kube:/home/jenkins/.kube -e KUBECONFIG=/home/jenkins/.kube/config jen-mav-dock-kube
+  D5e0e4387445917d68f8058880f07af0c28ae68991f8064812b2b9fa0da027af
+
+
+5) before we dploy through pipeline we try and build the pods and dpeloyment locallly on our machine with the image that was build previously to check if the image being made is correct before making it part of CD
+
+kubectl port-forward svc/cicd-springboot-service 8080:80 - this will bre reuqired to acccess the application 
+Why localhost:30007 is NOT working (important)
+
+You are using KIND (Kubernetes IN Docker).
+
+In KIND:
+
+Nodes themselves run inside Docker container
+NodePort is exposed on the KIND node container, not directly on your Windows host
+
+
+6) We mount the kubeconfig of local host to the jenkins continer so that same cluster can be accessed and also set the kubeconfig 
+ -v /c/Users/skhad/.kube:/home/jenkins/.kube -e KUBECONFIG=/home/jenkins/.kube/config
+
+PTR : 
+There are 3 different things that often get mixed up:
+
+Thing	What it is
+kubectl	Just a CLI binary
+Kubernetes cluster	The control plane + nodes
+kubeconfig	The credentials + endpoint to talk to a cluster
+
+👉 Installing kubectl does NOT create a cluster
+👉 Installing kubectl does NOT create kubeconfig
+
+7) Now our kubecnfig og host was initally having 
+   server: https://127.0.0.1:52636
+  due to whic faced the error :
+                      jenkins@854e71553fbc:/$ kubectl get nodes E1226 15:26:13.389015 154 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"https://127.0.0.1:52636/api?timeout=32s\": dial tcp 12 7.0.0.1:52636: connect: connection refused"
+
+
+    Docker Desktop Kubernetes:
+Runs the API server on the host
+kubeconfig generated on Windows often uses:
+127.0.0.1:<random-port> ❌ (works only on host)
+Containers cannot access host localhost directly
+
+    To remedy this : 
+    we changed it to below 
+      server: https://host.docker.internal:52636
+
+    But again an error popped saying
+          jenkins@854e71553fbc:/$ kubectl get nodes E1226 15:32:24.992061 112 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"https://host.docker.internal:52636/api?timeout=32s\": tls: failed to verify certificate: x509: certificate is valid for desktop-control-plane, kubernetes, kubernetes.default, kubernetes.default.svc, kubernetes.default.svc.cluster.local, localhost, not host.docker.internal"
+
+      Translation:
+
+Kubernetes API TLS certificate does NOT include host.docker.internal
+It does include localhost
+TLS verification fails → connection rejected ❌
+So we fixed network reachability, but TLS hostname verification is now blocking us.
+
+
+  Now finally changing it to  : server: https://localhost:52636
+   wokred for us 
+   KEY LEARNING
+
+   also while spwaing jenkins container add  ----   --add-host=localhost:host-gateway
+   this makes localhost (inside container) → Windows host || Jenkins → localhost:52636 → Docker Desktop Kubernetes API ✅
+
+
+
+8) have deployment and servie yaml ready for dpeloying the image cicd-springboot that is getting ready in previous step , the manifest be updated accordingly 
+
+   and add this stage for deploying k8s 
+        stage('Deploy to Kubernetes') {
+    steps {
+        sh '''
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/cicd-springboot
+        '''
+    }
+}
+
+
+9) Run the pipeline pods and svc come up with pipeline
+   NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE cicd-springboot-service NodePort 10.96.208.255 <none> 80:30007/TCP 2m40s kubernetes ClusterIP 10.96.0.1 <none> 443/TCP 10h skhad@DESKTOP-GIJB0HF MINGW64 /e/CICD-project (feature/initial-app) $ kubectl get pods NAME READY STATUS RESTARTS AGE cicd-springboot-746b76b56f-q7vfn 1/1 Running 0 3m50s
+
+   toverify pod is healthy 
+
+               kubectl exec -it cicd-springboot-746b76b56f-q7vfn -- curl localhost:8080/hello
+
+    port forwarding to check /hello : kubectl port-forward svc/cicd-springboot-service 8080:80
+
+=========================================================================================================================================================================
