@@ -24,12 +24,13 @@ pipeline {
         }
         stage('SonarQube Analysis') {
            steps {
-               withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                  dir('app') {
-                            sh '''
-                            mvn sonar:sonar \
-                            -Dsonar.login=$SONAR_TOKEN
-                  '''
+                withSonarQubeEnv('sonarqube') {
+                    dir('app') {
+                        sh '''
+                        mvn sonar:sonar \
+                            -Dsonar.projectKey=release-info-service \
+                            -Dsonar.projectName=release-info-service
+                        '''
                     }
                 }
             }
