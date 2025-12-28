@@ -44,7 +44,7 @@ pipeline {
                 )]) {
                     sh '''
                       echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                      docker push $IMAGE_NAME:${BUILD_NUMBER}
+                      docker push $IMAGE_NAME:1.0.${BUILD_NUMBER}
                       docker push $IMAGE_NAME:latest
                     '''
                 }
