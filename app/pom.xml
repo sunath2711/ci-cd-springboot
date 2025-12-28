@@ -21,6 +21,9 @@
 
     <properties>
         <java.version>11</java.version>
+        <sonar.projectKey>release-info-service</sonar.projectKey>
+        <sonar.projectName>release-info-service</sonar.projectName>
+        <sonar.host.url>http://host.docker.internal:9000</sonar.host.url>
     </properties>
 
     <dependencies>

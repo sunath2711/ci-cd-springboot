@@ -22,6 +22,25 @@ pipeline {
                 }
             }
         }
+        stage('SonarQube Analysis') {
+           steps {
+               withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                  dir('app') {
+                            sh '''
+                            mvn sonar:sonar \
+                            -Dsonar.login=$SONAR_TOKEN
+                  '''
+                    }
+                }
+            }
+        }
+        stage('Quality Gate') {
+           steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                   }
+                }
+        }
 
         stage('Docker Build') {
             steps {
@@ -60,5 +79,6 @@ pipeline {
             '''
             }
         }
+        
     }
 }
