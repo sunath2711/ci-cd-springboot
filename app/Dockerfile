@@ -10,8 +10,11 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 # ---- Build-time argument ----
 ARG BUILD_VERSION=local
+
 # ---- Runtime environment variable ----
 ENV APP_VERSION=${BUILD_VERSION}
+ENV APP_NAME=release-info-service
+
 COPY --from=builder /build/target/*.jar app.jar
 
 EXPOSE 8080

@@ -28,7 +28,7 @@ pipeline {
                 sh '''
                   docker build \
                     --build-arg BUILD_VERSION=${BUILD_NUMBER} \
-                    -t $IMAGE_NAME:${BUILD_NUMBER} \
+                    -t $IMAGE_NAME:1.0.${BUILD_NUMBER} \
                     -t $IMAGE_NAME:latest \
                     app
                 '''
