@@ -53,6 +53,7 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
+                  sed -i "s|IMAGE_PLACEHOLDER|$IMAGE_NAME:1.0.${BUILD_NUMBER}|g" k8s/deployment.yaml
                   kubectl apply -f k8s/deployment.yaml
                   kubectl apply -f k8s/service.yaml
                   kubectl rollout status deployment/cicd-springboot
