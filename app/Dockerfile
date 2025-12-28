@@ -8,6 +8,10 @@ RUN mvn clean package -DskipTests
 # ---------- Stage 2: Runtime ----------
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+# ---- Build-time argument ----
+ARG BUILD_VERSION=local
+# ---- Runtime environment variable ----
+ENV APP_VERSION=${BUILD_VERSION}
 COPY --from=builder /build/target/*.jar app.jar
 
 EXPOSE 8080

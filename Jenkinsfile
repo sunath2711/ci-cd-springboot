@@ -26,8 +26,11 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
-                  docker build -t $IMAGE_NAME:${BUILD_NUMBER} app
-                  docker tag $IMAGE_NAME:${BUILD_NUMBER} $IMAGE_NAME:latest
+                  docker build \
+                    --build-arg BUILD_VERSION=${BUILD_NUMBER} \
+                    -t $IMAGE_NAME:${BUILD_NUMBER} \
+                    -t $IMAGE_NAME:latest \
+                    app
                 '''
             }
         }
