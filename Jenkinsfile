@@ -22,12 +22,35 @@ pipeline {
                 }
             }
         }
+        stage('SonarQube Analysis') {
+           steps {
+                withSonarQubeEnv('sonarqube') {
+                    dir('app') {
+                        sh '''
+                        mvn sonar:sonar \
+                            -Dsonar.projectKey=release-info-service \
+                            -Dsonar.projectName=release-info-service
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Quality Gate') {
+           steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                   }
+                }
+        }
 
         stage('Docker Build') {
             steps {
                 sh '''
-                  docker build -t $IMAGE_NAME:${BUILD_NUMBER} app
-                  docker tag $IMAGE_NAME:${BUILD_NUMBER} $IMAGE_NAME:latest
+                  docker build \
+                    --build-arg BUILD_VERSION=${BUILD_NUMBER} \
+                    -t $IMAGE_NAME:1.0.${BUILD_NUMBER} \
+                    -t $IMAGE_NAME:latest \
+                    app
                 '''
             }
         }
@@ -41,11 +64,22 @@ pipeline {
                 )]) {
                     sh '''
                       echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                      docker push $IMAGE_NAME:${BUILD_NUMBER}
+                      docker push $IMAGE_NAME:1.0.${BUILD_NUMBER}
                       docker push $IMAGE_NAME:latest
                     '''
                 }
             }
         }
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                  sed -i "s|IMAGE_PLACEHOLDER|$IMAGE_NAME:1.0.${BUILD_NUMBER}|g" k8s/deployment.yaml
+                  kubectl apply -f k8s/deployment.yaml
+                  kubectl apply -f k8s/service.yaml
+                  kubectl rollout status deployment/cicd-springboot
+            '''
+            }
+        }
+        
     }
 }

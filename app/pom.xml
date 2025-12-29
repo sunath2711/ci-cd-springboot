@@ -21,6 +21,9 @@
 
     <properties>
         <java.version>11</java.version>
+        <sonar.projectKey>release-info-service</sonar.projectKey>
+        <sonar.projectName>release-info-service</sonar.projectName>
+        <sonar.host.url>http://host.docker.internal:9000</sonar.host.url>
     </properties>
 
     <dependencies>
@@ -45,6 +48,12 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- SonarQube Maven Plugin -->
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>3.11.0.3922</version>
             </plugin>
         </plugins>
     </build>

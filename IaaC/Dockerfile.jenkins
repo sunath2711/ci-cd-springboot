@@ -1,0 +1,24 @@
+FROM jenkins/jenkins:lts
+
+USER root
+
+# ---- Install base dependencies ----
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    maven \
+    curl \
+    ca-certificates \
+    apt-transport-https \
+    && apt-get clean
+
+# ---- Install kubectl ----
+RUN curl -fsSL https://dl.k8s.io/release/stable.txt | \
+    xargs -I {} curl -fsSL -o /usr/local/bin/kubectl \
+    https://dl.k8s.io/release/{}/bin/linux/amd64/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
+# ---- Add jenkins user to docker group ----
+RUN groupadd -f docker && \
+    usermod -aG docker jenkins
+
+USER jenkins
