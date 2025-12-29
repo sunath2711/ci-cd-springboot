@@ -4,12 +4,23 @@ pipeline {
     triggers {
     githubPush()
     }
+    options {
+    disableConcurrentBuilds()
+    }
 
     environment {
         IMAGE_NAME = "sunath27/cicd-springboot"
     }
 
     stages {
+
+        stage('Build Info') {
+            steps {
+                script {
+                    echo "Triggered by: ${currentBuild.rawBuild.getCause(hudson.model.Cause$UserIdCause)}"
+                }
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -20,6 +31,9 @@ pipeline {
         }
 
         stage('Build & Package') {
+             when {
+                branch 'main'
+            }
             steps {
                 dir('app') {
                     sh 'mvn clean package'
