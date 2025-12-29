@@ -16,9 +16,12 @@ pipeline {
 
         stage('Build Info') {
             steps {
-                script {
-                    echo "Triggered by: ${currentBuild.rawBuild.getCause(hudson.model.Cause$UserIdCause)}"
-                }
+                sh '''
+                echo "Job      : $JOB_NAME"
+                echo "Build    : $BUILD_NUMBER"
+                echo "Branch   : $BRANCH_NAME"
+                echo "Commit   : $GIT_COMMIT"
+                '''
             }
         }
 
