@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    triggers {
+    githubPush()
+    }
+
     environment {
         IMAGE_NAME = "sunath27/cicd-springboot"
     }
