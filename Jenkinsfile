@@ -1,3 +1,21 @@
+def notifyEmail(String status, String subjectSuffix) {
+    emailext(
+        subject: "[CI/CD] ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${subjectSuffix}",
+        body: """
+        <h3>Pipeline Status: ${status}</h3>
+        <p><b>Job:</b> ${env.JOB_NAME}</p>
+        <p><b>Build:</b> #${env.BUILD_NUMBER}</p>
+        <p><b>Branch:</b> ${env.GIT_BRANCH}</p>
+        <p><b>Commit:</b> ${env.GIT_COMMIT}</p>
+
+        <p>
+          <a href="${env.BUILD_URL}">Jenkins Build</a><br>
+          <a href="http://localhost:9000/dashboard?id=release-info-service">SonarQube</a>
+        </p>
+        """,
+        to: 'sunath.work@gmail.com'
+    )
+}
 pipeline {
     agent any
 
@@ -136,6 +154,28 @@ pipeline {
             '''
             }
         }
-        
+        post {
+            success {
+                notifyEmail(
+                    "SUCCESS",
+                    "Deployment Successful"
+                )
+            }
+
+            failure {
+                notifyEmail(
+                    "FAILED",
+                    "Pipeline Failed"
+                )
+            }
+
+            unstable {
+                notifyEmail(
+                    "UNSTABLE",
+                    "Quality Gate / Security Issues"
+                )
+            }
+        }
+
     }
 }
