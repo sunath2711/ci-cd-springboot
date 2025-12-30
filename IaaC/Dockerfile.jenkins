@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     apt-transport-https \
+    gnupg \
+    lsb-release \
     && apt-get clean
 
 # ---- Install kubectl ----
@@ -17,6 +19,10 @@ RUN curl -fsSL https://dl.k8s.io/release/stable.txt | \
     https://dl.k8s.io/release/{}/bin/linux/amd64/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
+# Install Trivy
+RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+    | sh -s -- -b /usr/local/bin
+    
 # ---- Add jenkins user to docker group ----
 RUN groupadd -f docker && \
     usermod -aG docker jenkins

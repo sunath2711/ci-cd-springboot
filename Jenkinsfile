@@ -76,6 +76,40 @@ pipeline {
             }
         }
 
+        stage('Image Security Scan (Trivy)') {
+            steps {
+                script {
+                    def imageName = "sunath27/cicd-springboot:1.0.${BUILD_NUMBER}"
+
+                    sh """
+                    mkdir -p trivy-reports
+
+                    echo "Running Trivy scan on ${imageName}"
+
+                    trivy image \
+                        --timeout 15m \
+                        --severity CRITICAL \
+                        --format json \
+                        --output trivy-reports/trivy-report.json \
+                        --no-progress \
+                        ${imageName}
+
+                    trivy image \
+                        --timeout 15m \
+                        --severity CRITICAL \
+                        --exit-code 1 \
+                        --no-progress \
+                        ${imageName}
+                    """
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-reports/*.json', fingerprint: true
+                }
+            }
+        }
+
         stage('Docker Push') {
             steps {
                 withCredentials([usernamePassword(
