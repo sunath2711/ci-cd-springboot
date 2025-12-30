@@ -97,7 +97,7 @@ pipeline {
                     trivy image \
                         --timeout 15m \
                         --severity CRITICAL \
-                        --exit-code 0 \ 
+                        --exit-code 0 \
                         --no-progress \
                         ${imageName}
                     """
