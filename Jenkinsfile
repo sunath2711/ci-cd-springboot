@@ -154,7 +154,9 @@ pipeline {
             '''
             }
         }
-        post {
+
+    }
+    post {
             success {
                 notifyEmail(
                     "SUCCESS",
@@ -176,6 +178,4 @@ pipeline {
                 )
             }
         }
-
-    }
 }
