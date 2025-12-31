@@ -683,3 +683,12 @@ So we fixed network reachability, but TLS hostname verification is now blocking 
     port forwarding to check /hello : kubectl port-forward svc/cicd-springboot-service 8080:80
 
 =========================================================================================================================================================================
+
+
+
+
+
+Phase 5 
+
+
+Automatic trigger for pipeline on code push to github
