@@ -659,7 +659,7 @@ So we fixed network reachability, but TLS hostname verification is now blocking 
 
 
 
-8) have deployment and servie yaml ready for dpeloying the image cicd-springboot that is getting ready in previous step , the manifest be updated accordingly 
+8) have deployment and service yaml ready for dpeloying the image cicd-springboot that is getting ready in previous step , the manifest be updated accordingly 
 
    and add this stage for deploying k8s 
         stage('Deploy to Kubernetes') {
@@ -692,3 +692,390 @@ Phase 5
 
 
 Automatic trigger for pipeline on code push to github
+Code push → Jenkins pipeline triggers → Image builds → App deploys to Kubernetes
+this will all be taken care automaticly as we push to the main branch
+
+Developer pushes code to Git repo
+        ↓
+Git webhook triggers Jenkins
+        ↓
+Jenkins pipeline runs automatically
+        ↓
+Docker image built & tagged
+        ↓
+Image pushed to registry
+        ↓
+Kubernetes deployment updated
+
+Phase 5 – Building a Production-Grade CI/CD Pipeline
+
+Goal of Phase 5
+Move from “a working pipeline” to a trustworthy, observable, secure, and automated CI/CD system, close to real-world DevOps practices.
+
+Phase 5.1 – Application Metadata & Versioning (CI/CD Visibility)
+Problem Statement
+
+At the beginning of Phase 5:
+
+Jenkins pipeline was building Docker images - Images were pushed to Docker Hub -> Kubernetes deployments were applied
+
+But:
+
+There was no way to verify which build was running Pods looked identical across deployments
+CI/CD success did not translate into runtime confidence
+
+This made the pipeline opaque.
+----------------
+Design Decision
+
+Expose build metadata at runtime, driven entirely by CI/CD, not manually coded.
+------------------------
+Key requirements:
+
+1) No hardcoding version in Java
+2) Version should come from Jenkins build
+3) Version should be visible via HTTP endpoint
+
+Implementation Steps
+1. Dockerfile Enhancement
+
+Added build-time and runtime metadata support:
+
+ARG BUILD_VERSION=local
+ENV APP_VERSION=${BUILD_VERSION}
+
+
+This allows Jenkins to inject:
+
+BUILD_NUMBER
+
+or semantic version later
+
+2. Jenkins Docker Build Stage
+
+Updated Jenkinsfile to pass build version:
+
+docker build \
+  --build-arg BUILD_VERSION=${BUILD_NUMBER} \
+  -t sunath27/cicd-springboot:1.0.${BUILD_NUMBER} \
+  -t sunath27/cicd-springboot:latest .
+
+
+Now:
+
+Every image is uniquely identifiable, latest is only a convenience tag
+-------------------------
+3. Spring Boot /release Endpoint
+
+Added a new endpoint:
+
+@GetMapping("/release")
+public Map<String, String> release() {
+    return Map.of(
+        "application", "release-info-service",
+        "version", System.getenv("APP_VERSION")
+    );
+}
+
+Verification
+
+After deployment:
+
+kubectl exec -it <pod> -- printenv | grep APP_VERSION
+curl http://<service>/release
+
+
+Confirmed:
+
+Correct build number, Correct application identity, 
+Learning
+
+CI/CD pipelines must prove correctness, not just claim success.
+-----------------------------------------------------------------------
+Phase 5.1 (Extended) – Kubernetes Rollout Reality
+Issue Observed
+
+Running a new pipeline:
+New image pushed
+No pod restart
+kubectl apply reported “unchanged”
+
+Root Cause Analysis
+
+Deployment YAML referenced :latest
+Kubernetes compares manifests, not registry tags
+If manifest doesn’t change → no rollout
+
+Fix Applied
+Jenkins Deployment Step
+Replaced image dynamically:
+
+sed -i s|IMAGE_PLACEHOLDER|sunath27/cicd-springboot:1.0.${BUILD_NUMBER}|g k8s/deployment.yaml
+kubectl apply -f k8s/deployment.yaml
+
+Result
+
+Each pipeline caused a real rollout - Old pod terminated - New pod started with new image - Rollout history incremented
+
+Learning
+
+Kubernetes is deterministic. You must tell it what changed.
+----------------------------------------------------------------------------------------
+Phase 5.2 – Auto Pipeline Trigger (True CI)
+Objective
+
+Eliminate manual pipeline triggers and enable:
+Event-driven CI
+Git as the single source of truth
+----------
+Step 1: Exposing Jenkins to GitHub
+Problem
+
+Jenkins running locally on localhost:8081
+GitHub cannot reach localhost
+Solution: ngrok
+Setup Steps (Windows)
+
+1) Download ngrok binary
+
+Authenticate:
+
+2) ./ngrok config add-authtoken <token>
+
+Start tunnel: only after this tunnel gives a claiamable URL we wil able to access the jenkins server from github webhook
+
+./ngrok http 8081
+
+Result:
+
+Forwarding https://xxxxx.ngrok-free.dev -> http://localhost:8081
+
+Step 2: GitHub Webhook Configuration
+GitHub → Repository → Settings → Webhooks ( add github-webhook) to the above URL while adding in github webhook
+Payload URL:
+
+https://xxxxx.ngrok-free.dev/github-webhook/
+
+Content type: application/json
+Events:
+Push events
+Active: ✅
+--------------------
+Step 3: Jenkins Job Configuration
+
+Enabled:
+
+1)“GitHub hook trigger for GITScm polling”
+2)SCM configured for main branch
+
+Verification
+3) git push origin main
+
+
+Observed:
+    Webhook delivery: ✅ green (can check last delivery status in github webhook settings)
+
+Jenkins pipeline triggered automatically
+Full CI/CD executed
+
+Issues Faced
+
+ngrok binary not in PATH (Git Bash)
+ngrok URL changed after restart
+Webhook delivery failed after Jenkins restart
+
+Fixes
+
+Used ./ngrok.exe
+
+Updated webhook URL
+
+Verified GitHub delivery logs
+
+Learning
+
+CI is real only when humans stop clicking “Build”.
+----------------------------------------------
+Phase 5.3 – Code Quality with SonarQube
+Objective
+
+Introduce:
+Static analysis
+Quality gates
+Engineering discipline
+Setup
+SonarQube
+- another container with sonarqube is spawned 
+
+Deployed via Docker
+ docker run -d \
+  --name sonarqube \
+  --network cicd-net \
+  -p 9000:9000 \
+  -v sonarqube_data:/opt/sonarqube/data \
+  -v sonarqube_extensions:/opt/sonarqube/extensions \
+  -v sonarqube_logs:/opt/sonarqube/logs \
+  sonarqube:lts-community
+0e48c8fb0ebbb01a7924d7775efa051ee2095acf1ec587043da148678cc05f8f
+
+make sure the network for jenkins and sonarqube is same so that they can communicate ( here it is cicd-net)
+then create volumes data, extensions, logs for sonarqube to persist data, by default data may get lost on container restart
+-----------
+
+Port: 9000
+
+Project created: release-info-service
+
+Jenkins Integration Steps
+1. Maven Plugin Added
+
+In pom.xml:
+
+<plugin>
+  <groupId>org.sonarsource.scanner.maven</groupId>
+  <artifactId>sonar-maven-plugin</artifactId>
+</plugin>
+
+2. Jenkinsfile Configuration
+
+Wrapped analysis:
+
+withSonarQubeEnv('sonarqube') {
+    sh 'mvn sonar:sonar'
+}
+
+3. Quality Gate Enforcement
+timeout(time: 5, unit: 'MINUTES') {
+    waitForQualityGate abortPipeline: true
+}
+
+Major Issues & Fixes
+Issue 1: Build Success but Pipeline Failure
+
+Root cause: waitForQualityGate used without withSonarQubeEnv
+Fix: Wrapped analysis correctly
+
+Issue 2: Quality Gate Stuck in PENDING
+Root cause: Sonar webhook not reaching Jenkins
+Jenkins & Sonar in different Docker contexts
+
+DNS resolution failed
+Fixes
+
+Connected containers via Docker network
+Configured Sonar webhook:
+
+http://jenkins:8080/sonarqube-webhook/
+Added persistent volumes to Sonar (data loss prevention)
+
+Outcome
+
+Jenkins correctly received quality gate results
+Pipeline blocked on failures
+Sonar dashboard reflected each build
+
+Can also check last delivery status in sonar webhook settings, initialy faced issue where webhook was in pending state
+this was due to sonarqube and jenkins being in different docker contexts and unable to resolve each other via DNS
+once they were in same docker network cicd-net this issue was resolved and webhook started working fine
+Learning
+
+Quality gates are useless without reliable feedback loops.
+
+Phase 5.4 – Image Security Scanning (Trivy)
+Objective
+
+Introduce DevSecOps practices:
+
+1)Shift-left security
+2) Scan images before deployment
+
+Trivy Integration
+Initial Attempt
+
+1) Tried installing Trivy via apt:
+2) Failed due to Debian trixie repo mismatch
+
+Final Approach
+
+1) Installed Trivy binary
+2) Ran scan inside Jenkins stage:
+
+trivy image sunath27/cicd-springboot:1.0.${BUILD_NUMBER}
+
+Issues Faced
+
+First scan took ~5 minutes (Java DB download)
+Timeout errors
+Critical CVEs detected
+
+Fixes
+
+Increased Jenkins timeout
+Cached Trivy DB
+
+Accepted failures for visibility (not blocking yet)
+
+Results
+
+Detected:
+CRITICAL Tomcat RCE CVE-2023-20861
+Spring Web deserialization issue
+
+
+To not fail due to critical right the exit code is set to zero instead 1, so that pipeline continues to run
+
+Security becomes actionable only when automated.
+-----------------------------------------------------
+Phase 5.6 – Notifications (Email)
+Objective
+
+Provide immediate feedback on pipeline result.
+
+Setup Steps
+Jenkins → Manage Jenkins → Configure System
+
+SMTP Server: smtp.gmail.com
+
+Port: 587
+
+Use TLS
+
+Credentials:
+
+Gmail App Password( this password is not the normal gmail password but an app password generated from google account security settings for third party apps)
+U need to have 2FA enabled on google account to generate app password, 16 digit passwrd is created and that is used here in jenkins 
+
+Test email: ✅ success
+
+Outcome
+
+Email sent on pipeline success/failure
+Improved operational readiness
+
+Learning
+Silent pipelines are dangerous pipelines.
+Phase 5 Summary – What Was Achieved
+
+By the end of Phase 5:
+
+1) Git-triggered CI/CD
+2)Versioned deployments
+3)Observable runtime metadata
+4) Quality gates enforced
+5) Image security scanning
+6) Safe rollouts
+7) Notifications enabled
+
+
+
+MSYS_NO_PATHCONV=1 docker run -d   --name jenkins   --network cicd-net   -p 8081:8080  
+-p 50000:50000   --add-host=localhost:host-gateway 
+-v 3df91a4c956902f68f78412c006b1fae2b3feb33ef4c69ee5058ebc5c0449258:/var/jenkins_home   
+-v //var/run/docker.sock:/var/run/docker.sock
+//   -v /c/Users/skhad/.kube:/home/jenkins/.kube   -e KUBECONFIG=/home/jenkins/.kube/config   jen-mav-dock-kube:trivy
+----------------------------------------------------------------------------------------------------------
+alawys check the permission of file /var/run/docker.sock inside the container - should be root:docker and jenkins user should be part of docker group
+sonarqube creds : admin / admin12345
+jenkins creds: Kakashi 
+email used for mail service : sunath.work@gmail.com
+
