@@ -1078,4 +1078,6 @@ alawys check the permission of file /var/run/docker.sock inside the container - 
 sonarqube creds : admin / admin12345
 jenkins creds: Kakashi 
 email used for mail service : sunath.work@gmail.com
+------------------
 
+Always check certain configs before deploying through pipeline
